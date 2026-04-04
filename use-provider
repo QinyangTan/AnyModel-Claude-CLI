@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$ROOT/examples/provider-gateway/gateway.env"
+
+usage() {
+  echo "Usage: ./use-provider <gemini|openai|deepseek|openrouter|auto> [brand] [custom_brand_name]"
+  echo ""
+  echo "Updates ANTHROPIC_MODEL, ANTHROPIC_SMALL_FAST_MODEL, and optional CLI_BRAND in:"
+  echo "  $ENV_FILE"
+  echo ""
+  echo "Brands: starpaw | cyber-fox | baby-otter | pixel-bunny | openai-neon"
+  echo "Aliases: openai/neon/robot -> openai-neon, rabbit -> pixel-bunny"
+  echo "Example: ./use-provider openai openai-neon \"AnyModel Claude CLI\""
+}
+
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+  usage
+  exit 1
+fi
+
+provider="$1"
+brand="${2:-}"
+custom_brand_name="${3:-}"
+model=""
+key_hint=""
+selected_key_var=""
+
+normalize_brand() {
+  echo "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+validate_brand() {
+  [[ -n "$(canonical_brand "$1")" ]]
+}
+
+canonical_brand() {
+  case "$1" in
+    starpaw|default) echo "starpaw" ;;
+    cyber-fox|fox) echo "cyber-fox" ;;
+    baby-otter|otter) echo "baby-otter" ;;
+    pixel-bunny|bunny|rabbit) echo "pixel-bunny" ;;
+    openai-neon|openai|neon|robot) echo "openai-neon" ;;
+    *) echo "" ;;
+  esac
+}
+
+model_for_provider() {
+  case "$1" in
+    gemini) echo "gemini-via-gateway" ;;
+    openai) echo "openai-via-gateway" ;;
+    deepseek) echo "deepseek-via-gateway" ;;
+    openrouter) echo "openrouter-via-gateway" ;;
+    *) return 1 ;;
+  esac
+}
+
+key_var_for_provider() {
+  case "$1" in
+    gemini) echo "GOOGLE_API_KEY" ;;
+    openai) echo "OPENAI_API_KEY" ;;
+    deepseek) echo "DEEPSEEK_API_KEY" ;;
+    openrouter) echo "OPENROUTER_API_KEY" ;;
+    *) return 1 ;;
+  esac
+}
+
+key_hint_for_provider() {
+  case "$1" in
+    gemini) echo "GOOGLE_API_KEY (or GEMINI_API_KEY)" ;;
+    openai) echo "OPENAI_API_KEY" ;;
+    deepseek) echo "DEEPSEEK_API_KEY" ;;
+    openrouter) echo "OPENROUTER_API_KEY" ;;
+    *) return 1 ;;
+  esac
+}
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing $ENV_FILE"
+  echo "Create it and set provider key(s), then rerun."
+  exit 1
+fi
+
+set -a
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+set +a
+
+if [[ -z "${GOOGLE_API_KEY:-}" && -n "${GEMINI_API_KEY:-}" ]]; then
+  GOOGLE_API_KEY="$GEMINI_API_KEY"
+fi
+
+has_key_for_provider() {
+  local p="$1"
+  case "$p" in
+    gemini) [[ -n "${GOOGLE_API_KEY:-}" ]] ;;
+    openai) [[ -n "${OPENAI_API_KEY:-}" ]] ;;
+    deepseek) [[ -n "${DEEPSEEK_API_KEY:-}" ]] ;;
+    openrouter) [[ -n "${OPENROUTER_API_KEY:-}" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+if [[ "$provider" == "auto" ]]; then
+  for p in openrouter openai gemini deepseek; do
+    if has_key_for_provider "$p"; then
+      provider="$p"
+      break
+    fi
+  done
+  if [[ "$provider" == "auto" ]]; then
+    echo "No provider key found in $ENV_FILE."
+    echo "Set at least one key: OPENROUTER_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY (or GEMINI_API_KEY) / DEEPSEEK_API_KEY"
+    exit 1
+  fi
+fi
+
+model="$(model_for_provider "$provider")" || {
+  usage
+  exit 1
+}
+selected_key_var="$(key_var_for_provider "$provider")"
+key_hint="$(key_hint_for_provider "$provider")"
+
+missing_key_warning=0
+if ! has_key_for_provider "$provider"; then
+  missing_key_warning=1
+fi
+
+if [[ -n "$brand" ]]; then
+  brand="$(normalize_brand "$brand")"
+  if ! validate_brand "$brand"; then
+    echo "Invalid brand: $brand"
+    echo "Allowed brands: starpaw | cyber-fox | baby-otter | pixel-bunny | openai-neon"
+    exit 1
+  fi
+  brand="$(canonical_brand "$brand")"
+fi
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+
+model_set=0
+small_set=0
+brand_set=0
+brand_name_set=0
+while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$line" =~ ^export[[:space:]]+ANTHROPIC_MODEL= ]]; then
+    echo "export ANTHROPIC_MODEL=$model" >>"$tmp"
+    model_set=1
+    continue
+  fi
+  if [[ "$line" =~ ^export[[:space:]]+ANTHROPIC_SMALL_FAST_MODEL= ]]; then
+    echo "export ANTHROPIC_SMALL_FAST_MODEL=$model" >>"$tmp"
+    small_set=1
+    continue
+  fi
+  if [[ -n "$brand" && "$line" =~ ^export[[:space:]]+CLI_BRAND= ]]; then
+    echo "export CLI_BRAND=$brand" >>"$tmp"
+    brand_set=1
+    continue
+  fi
+  if [[ -n "$custom_brand_name" && "$line" =~ ^export[[:space:]]+CLI_BRAND_NAME= ]]; then
+    printf 'export CLI_BRAND_NAME=%q\n' "$custom_brand_name" >>"$tmp"
+    brand_name_set=1
+    continue
+  fi
+  echo "$line" >>"$tmp"
+done <"$ENV_FILE"
+
+if [[ $model_set -eq 0 ]]; then
+  echo "export ANTHROPIC_MODEL=$model" >>"$tmp"
+fi
+if [[ $small_set -eq 0 ]]; then
+  echo "export ANTHROPIC_SMALL_FAST_MODEL=$model" >>"$tmp"
+fi
+if [[ -n "$brand" && $brand_set -eq 0 ]]; then
+  echo "export CLI_BRAND=$brand" >>"$tmp"
+fi
+if [[ -n "$custom_brand_name" && $brand_name_set -eq 0 ]]; then
+  printf 'export CLI_BRAND_NAME=%q\n' "$custom_brand_name" >>"$tmp"
+fi
+
+mv "$tmp" "$ENV_FILE"
+trap - EXIT
+
+echo "Switched provider to: $provider ($model)"
+if [[ -n "$brand" ]]; then
+  echo "Switched brand to: $brand"
+fi
+if [[ -n "$custom_brand_name" ]]; then
+  echo "Set custom brand title to: $custom_brand_name"
+fi
+echo "Updated: $ENV_FILE"
+echo ""
+echo "Next steps:"
+echo "  1) Confirm $key_hint is set in $(basename "$ENV_FILE")"
+echo "  2) Restart gateway: cd examples/provider-gateway && ./start-litellm.sh"
+echo "  3) Run CLI:         ./run-claude.sh"
+if [[ $missing_key_warning -eq 1 ]]; then
+  echo ""
+  echo "Warning: $selected_key_var is currently empty, so gateway startup will fail until you set it."
+fi

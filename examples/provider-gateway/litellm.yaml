@@ -1,0 +1,36 @@
+# LiteLLM proxy: Anthropic-compatible API -> multiple backends.
+# Choose backend by setting ANTHROPIC_MODEL in gateway.env to one of:
+#   - openai-via-gateway
+#   - gemini-via-gateway
+#   - deepseek-via-gateway
+#   - openrouter-via-gateway
+
+model_list:
+  - model_name: openai-via-gateway
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gemini-via-gateway
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: os.environ/GOOGLE_API_KEY
+  - model_name: deepseek-via-gateway
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: openrouter-via-gateway
+    litellm_params:
+      # Pick any OpenRouter-supported model slug here.
+      model: openrouter/openai/gpt-4o-mini
+      api_key: os.environ/OPENROUTER_API_KEY
+
+general_settings:
+  # Must match ANTHROPIC_API_KEY in gateway.env (what Claude Code sends).
+  master_key: sk-claude-code-local
+  # Backward-compatible place for older LiteLLM versions.
+  drop_params: true
+
+litellm_settings:
+  # Some Claude-specific request fields are not accepted by all providers.
+  # Dropping unsupported params keeps routing provider-agnostic.
+  drop_params: true

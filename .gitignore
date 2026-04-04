@@ -1,0 +1,5 @@
+dist
+node_modules
+
+# Local gateway secrets (safe for GitHub publishing)
+examples/provider-gateway/*.env

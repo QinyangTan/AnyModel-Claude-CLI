@@ -1,0 +1,78 @@
+Gateway API keys with Claude Code (this repo)
+=============================================
+
+Claude Code only speaks the Anthropic Messages API. Your provider key (OpenAI /
+Google AI Studio / DeepSeek / OpenRouter) is used by LiteLLM on your machine; Claude Code
+sends requests to LiteLLM, not directly to those providers.
+
+Bun / PATH
+----------
+
+If `bun` is "command not found" but you installed Bun, add it to PATH:
+
+  export PATH="$HOME/.bun/bin:$PATH"
+
+`run-claude.sh` also looks for Bun in ~/.bun/bin and Homebrew paths automatically.
+
+Steps
+-----
+
+1. Install LiteLLM (Python 3.10+ recommended):
+
+   pip install 'litellm[proxy]'
+
+2. Edit your local env file (gitignored):
+
+   cd examples/provider-gateway
+   Edit gateway.env:
+   - Set one provider key:
+     - GOOGLE_API_KEY (or GEMINI_API_KEY) for Google AI Studio
+     - OPENAI_API_KEY for OpenAI
+     - DEEPSEEK_API_KEY for DeepSeek
+     - OPENROUTER_API_KEY for OpenRouter
+   - Set ANTHROPIC_MODEL to the matching route name, or use:
+       cd <claude-code-main>
+       ./use-provider gemini   # or openai / deepseek / openrouter
+
+3. Terminal A — start the gateway (leave running):
+
+   ./start-litellm.sh
+
+4. Terminal B — run the CLI (pick one):
+
+   Repo root:              cd <claude-code-main> && ./run-claude.sh
+   This directory:         cd examples/provider-gateway && ./run-claude.sh
+
+   The root `run-claude.sh` only forwards to `examples/provider-gateway/run-claude.sh`.
+
+   The script runs `bun install` if node_modules is missing, then `bun run build`.
+   Skipping `bun install` can cause Bun to crash during the build (SIGTRAP).
+
+   Or manually:
+
+   source examples/provider-gateway/gateway.env
+   cd ../..
+   bun dist/cli.js
+
+5. Optional: change underlying provider model IDs in litellm.yaml
+   (litellm_params.model), and keep ANTHROPIC_MODEL equal to model_name.
+
+Troubleshooting
+---------------
+
+- Connection refused: start LiteLLM first (Terminal A).
+- 401 from proxy: ANTHROPIC_API_KEY must match master_key in litellm.yaml.
+- Wrong model errors: ANTHROPIC_MODEL must match model_name in litellm.yaml.
+- "Not logged in · Please run /login" with gateway env set: you may have an old
+  Claude.ai OAuth session in the keychain; the CLI was sending Bearer tokens to
+  LiteLLM instead of x-api-key. Rebuild after the latest auth fix, or run
+  `claude logout` (or clear OAuth in ~/.claude) once, then use ./run-claude.sh again.
+- CLI exits immediately: run from an interactive terminal (not a broken pipe);
+  ensure you use ./run-claude.sh so ANTHROPIC_* env vars are loaded.
+
+Publishing checklist
+--------------------
+
+- Keep real keys only in local `gateway.env`.
+- Never commit secrets. `*.env` files in this example are gitignored.
+- Keep `gateway.env` local and do not publish it.

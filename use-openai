@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Usage:
+#   ./use-openai
+#   ./use-openai pixel-bunny
+#   ./use-openai openai-neon "TanQ AI Studio"
+# Default brand for OpenAI route is openai-neon.
+exec "$ROOT/use-provider" openai "${1:-openai-neon}" "${2:-}"

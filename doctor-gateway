@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+GW_DIR="$ROOT/examples/provider-gateway"
+ENV_FILE="$GW_DIR/gateway.env"
+LITELLM_CONFIG="$GW_DIR/litellm.yaml"
+
+PASS=0
+FAIL=0
+WARN=0
+
+pass() {
+  PASS=$((PASS + 1))
+  echo "[PASS] $1"
+}
+
+fail() {
+  FAIL=$((FAIL + 1))
+  echo "[FAIL] $1"
+}
+
+warn() {
+  WARN=$((WARN + 1))
+  echo "[WARN] $1"
+}
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  fail "missing gateway env file: $GW_DIR/gateway.env"
+  echo "Fix: create \"$GW_DIR/gateway.env\" with required key/model values."
+  exit 1
+fi
+pass "env file found: $(basename "$ENV_FILE")"
+
+if [[ ! -f "$LITELLM_CONFIG" ]]; then
+  fail "missing LiteLLM config: $LITELLM_CONFIG"
+  exit 1
+fi
+pass "LiteLLM config found: $(basename "$LITELLM_CONFIG")"
+
+set -a
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+set +a
+
+if [[ -z "${GOOGLE_API_KEY:-}" && -n "${GEMINI_API_KEY:-}" ]]; then
+  export GOOGLE_API_KEY="$GEMINI_API_KEY"
+fi
+
+selected_model="${ANTHROPIC_MODEL:-}"
+if [[ -z "$selected_model" ]]; then
+  fail "ANTHROPIC_MODEL is missing"
+else
+  pass "ANTHROPIC_MODEL is set to '$selected_model'"
+fi
+
+if [[ -z "${ANTHROPIC_SMALL_FAST_MODEL:-}" ]]; then
+  warn "ANTHROPIC_SMALL_FAST_MODEL is missing"
+else
+  pass "ANTHROPIC_SMALL_FAST_MODEL is set"
+fi
+
+if [[ -z "${ANTHROPIC_BASE_URL:-}" ]]; then
+  warn "ANTHROPIC_BASE_URL is missing"
+else
+  pass "ANTHROPIC_BASE_URL is set"
+fi
+
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  fail "ANTHROPIC_API_KEY is missing"
+else
+  pass "ANTHROPIC_API_KEY is set"
+fi
+
+if [[ -n "$selected_model" ]]; then
+  if rg -n "model_name:[[:space:]]*$selected_model" "$LITELLM_CONFIG" >/dev/null 2>&1; then
+    pass "model route exists in litellm.yaml: $selected_model"
+  else
+    fail "model route not found in litellm.yaml: $selected_model"
+  fi
+fi
+
+required_key_var=""
+case "$selected_model" in
+  openai-via-gateway) required_key_var="OPENAI_API_KEY" ;;
+  gemini-via-gateway) required_key_var="GOOGLE_API_KEY" ;;
+  deepseek-via-gateway) required_key_var="DEEPSEEK_API_KEY" ;;
+  openrouter-via-gateway) required_key_var="OPENROUTER_API_KEY" ;;
+  "") ;;
+  *) warn "custom model '$selected_model' selected; key check skipped" ;;
+esac
+
+if [[ -n "$required_key_var" ]]; then
+  required_key_val="${!required_key_var:-}"
+  if [[ -n "$required_key_val" ]]; then
+    pass "required provider key is set: $required_key_var"
+  else
+    fail "required provider key is missing: $required_key_var"
+  fi
+fi
+
+allowed_brands="starpaw cyber-fox baby-otter pixel-bunny openai-neon"
+if [[ -z "${CLI_BRAND:-}" ]]; then
+  warn "CLI_BRAND not set (will default to starpaw)"
+else
+  if [[ " $allowed_brands " == *" ${CLI_BRAND} "* ]]; then
+    pass "CLI_BRAND is valid: $CLI_BRAND"
+  else
+    fail "CLI_BRAND is invalid: $CLI_BRAND"
+  fi
+fi
+
+if [[ -n "${CLI_BRAND_NAME:-}" ]]; then
+  pass "CLI_BRAND_NAME is set"
+else
+  warn "CLI_BRAND_NAME not set (using default brand display name)"
+fi
+
+if [[ -n "${CLI_MASCOT:-}" ]]; then
+  case "${CLI_MASCOT}" in
+    cat|fox|otter|bunny|robot) pass "CLI_MASCOT is valid: ${CLI_MASCOT}" ;;
+    *) fail "CLI_MASCOT is invalid: ${CLI_MASCOT}" ;;
+  esac
+else
+  warn "CLI_MASCOT not set (using mascot from CLI_BRAND)"
+fi
+
+echo ""
+echo "Summary: ${PASS} pass, ${WARN} warn, ${FAIL} fail"
+
+if [[ $FAIL -ne 0 ]]; then
+  echo "Result: NOT READY"
+  exit 1
+fi
+
+echo "Result: READY"
