@@ -28,7 +28,7 @@ find_bun() {
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE"
-  echo "Create it and set provider key(s), then rerun."
+  echo "Run ./bootstrap-gateway.sh from the repo root to create it safely, then set provider key(s) and rerun."
   exit 1
 fi
 
