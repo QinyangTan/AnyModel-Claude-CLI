@@ -27,7 +27,8 @@ warn() {
 
 if [[ ! -f "$ENV_FILE" ]]; then
   fail "missing gateway env file: $GW_DIR/gateway.env"
-  echo "Fix: create \"$GW_DIR/gateway.env\" with required key/model values."
+  echo "Fix: run ./bootstrap-gateway.sh"
+  echo "     or create \"$GW_DIR/gateway.env\" from gateway.env.example and fill in your local keys."
   exit 1
 fi
 pass "env file found: $(basename "$ENV_FILE")"

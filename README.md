@@ -1,25 +1,197 @@
-# Claude Code Source Snapshot for Security Research
+# Claude Code Gateway Workflow on a Public Research Snapshot
 
-> This repository mirrors a **publicly exposed Claude Code source snapshot** that became accessible on **March 31, 2026** via an npm source-map exposure. It is maintained for **education, defensive security research, and software supply-chain analysis**.
+Run Claude-style CLI workflows through a local LiteLLM gateway with OpenAI, Gemini, DeepSeek, or OpenRouter.
 
-## Description
+> This repo is unofficial, local-first, and layered onto a public Claude Code source snapshot. Upstream ownership remains with Anthropic.
 
-This project is an educational and research-focused Claude Code snapshot with a working local gateway setup for multi-provider model access.
+## What This Repo Is Useful For
 
-- Rebuilds and runs the CLI from source with Bun
-- Routes Anthropic-compatible requests through LiteLLM to OpenAI, Gemini, DeepSeek, or OpenRouter
-- Includes helper scripts for provider switching, startup diagnostics, and local runtime checks
-- Emphasizes safe local usage (no committed secrets) and reproducible security research workflows
+- Trying a Claude-style terminal workflow against a local Anthropic-compatible gateway
+- Switching providers without rewriting the CLI itself
+- Rebuilding and inspecting the Bun + Ink CLI from source
+- Studying the exposed snapshot and its architecture for defensive research
 
-## NOTICE
+## Quick Start
 
-This repository contains a mirrored Claude Code source snapshot for educational and defensive security research purposes.
+1. Install the local dependencies:
+
+   ```bash
+   bun install
+   python3 -m pip install "litellm[proxy]"
+   ```
+
+2. Create a safe local env file and check your machine:
+
+   ```bash
+   ./bootstrap-gateway.sh
+   ```
+
+3. Open `examples/provider-gateway/gateway.env` and fill in one provider key:
+
+   - `OPENAI_API_KEY`
+   - `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+   - `DEEPSEEK_API_KEY`
+   - `OPENROUTER_API_KEY`
+
+4. Pick a route:
+
+   ```bash
+   ./use-provider auto
+   # or
+   ./use-provider openai openai-neon "My Local CLI"
+   # or
+   ./use-provider openrouter
+   ```
+
+5. Validate the setup:
+
+   ```bash
+   ./doctor-gateway
+   ./scripts/smoke-test-gateway.sh
+   ```
+
+6. Start LiteLLM in one terminal:
+
+   ```bash
+   cd examples/provider-gateway
+   ./start-litellm.sh
+   ```
+
+7. Start the CLI from the repo root in another terminal:
+
+   ```bash
+   ./run-claude.sh
+   ```
+
+`examples/provider-gateway/gateway.env` is local-only and gitignored. Do not commit real API keys.
+
+## What Works / What Does Not
+
+| Area | Current status | Notes |
+|---|---|---|
+| Bun build from source | Supported in this fork | `bun install && bun run build` |
+| Local LiteLLM gateway routing | Supported in this fork | Routes included for OpenAI, Gemini, DeepSeek, and OpenRouter |
+| Provider switching helpers | Supported in this fork | `./use-provider` and `./use-openai` update the local gateway env |
+| Local diagnostics | Supported in this fork | `./doctor-gateway` and `./scripts/smoke-test-gateway.sh` |
+| Official Anthropic support | Not included | This repo is unofficial and not maintained by Anthropic |
+| Exact Anthropic parity on non-Anthropic backends | Not guaranteed | Some models or side features may behave differently through LiteLLM |
+| Hosted gateway or managed secrets | Not included | The workflow is designed for local development |
+| Clean-room reimplementation or upstream relicensing | Not included | This remains a public research/archive snapshot with fork-added tooling |
+
+## Gateway Mode
+
+In gateway mode, the CLI still speaks Anthropic-shaped HTTP, but it does so against a local LiteLLM server instead of Anthropic's hosted API.
+
+Flow:
+
+1. The CLI reads `examples/provider-gateway/gateway.env`.
+2. `ANTHROPIC_BASE_URL` points the CLI at local LiteLLM, usually `http://127.0.0.1:4000`.
+3. `ANTHROPIC_MODEL` selects one of the route names defined in `examples/provider-gateway/litellm.yaml`.
+4. LiteLLM forwards the request to the provider whose API key you configured.
+
+Default route names in this repo:
+
+- `openai-via-gateway`
+- `gemini-via-gateway`
+- `deepseek-via-gateway`
+- `openrouter-via-gateway`
+
+The bundled `litellm.yaml` uses `drop_params: true` for better cross-provider compatibility.
+
+### Exact Commands
+
+Build the CLI:
+
+```bash
+bun install
+bun run typecheck
+bun run build
+```
+
+Bootstrap the local env:
+
+```bash
+./bootstrap-gateway.sh
+```
+
+Pick a provider:
+
+```bash
+./use-provider openrouter
+./use-provider openai openai-neon
+./use-provider gemini cyber-fox "Gemini Gateway CLI"
+./use-provider auto
+./use-openai
+```
+
+Validate before launch:
+
+```bash
+./doctor-gateway
+./scripts/smoke-test-gateway.sh
+```
+
+Start LiteLLM:
+
+```bash
+cd examples/provider-gateway
+./start-litellm.sh
+```
+
+Run the CLI:
+
+```bash
+cd /path/to/claude-code-main
+./run-claude.sh
+```
+
+## Helper Scripts
+
+| Script | What it does | Typical use |
+|---|---|---|
+| `./bootstrap-gateway.sh` | Confirms repo context, checks Bun/Python/LiteLLM, and creates a safe local `gateway.env` if missing | First run on a new machine |
+| `./use-provider` | Switches `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and optional branding | Swap between OpenAI, Gemini, DeepSeek, and OpenRouter |
+| `./use-openai` | Shortcut wrapper for `./use-provider openai` | Faster OpenAI selection |
+| `./doctor-gateway` | Verifies local env, route names, provider keys, and branding values | Quick readiness check before launch |
+| `./run-claude.sh` | Root-level wrapper that launches the example gateway workflow | Normal local CLI entrypoint |
+| `examples/provider-gateway/start-litellm.sh` | Starts the local LiteLLM proxy using the bundled config | Terminal 1 |
+| `examples/provider-gateway/run-claude.sh` | Builds the CLI if needed, then runs it with the local gateway env | Terminal 2 |
+| `./scripts/smoke-test-gateway.sh` | Runs safe local validation without making real provider calls | CI and local sanity checks |
+
+## Safety / Secrets
+
+- `examples/provider-gateway/gateway.env` is for local use only and is already gitignored.
+- `examples/provider-gateway/gateway.env.example` is the safe template meant for the repository.
+- In gateway mode, `ANTHROPIC_API_KEY` is the local LiteLLM master key expected by `litellm.yaml`, not an Anthropic cloud credential.
+- Provider keys should stay only in your local `gateway.env` or your shell environment.
+- Before pushing changes, double-check that no `.env` file or real API key is staged.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Missing .../gateway.env` | Local env file has not been created yet | Run `./bootstrap-gateway.sh` |
+| `Selected ... but ... API KEY is empty` | The chosen provider route does not have a matching key set | Edit `examples/provider-gateway/gateway.env` and add the matching key |
+| `model route not found in litellm.yaml` | `ANTHROPIC_MODEL` does not match a configured route name | Run `./use-provider ...` again or update `litellm.yaml` deliberately |
+| `LiteLLM is not on PATH` | LiteLLM is not installed in your current Python environment | Run `python3 -m pip install "litellm[proxy]"` |
+| `bun not found` | Bun is not installed or your shell has not reloaded PATH | Install Bun, reopen the terminal, and rerun `./bootstrap-gateway.sh` |
+| `dist/cli.js` missing | The CLI has not been built yet | Run `bun run build` or just launch `./run-claude.sh` and let it build |
+| Smoke test fails in CI for provider keys | The example env intentionally leaves provider keys empty | Run the smoke test with `--ci` or use a local env file with a real provider key |
+
+## Practical Setup Doc
+
+For a shorter, task-oriented walkthrough, see [docs/PRACTICAL_SETUP.md](docs/PRACTICAL_SETUP.md).
+
+## Unofficial Status and Ownership
+
+This repository contains a mirrored Claude Code source snapshot plus fork-added gateway tooling.
 
 - The original Claude Code source and related intellectual property are owned by Anthropic.
 - This repository is not affiliated with, endorsed by, or maintained by Anthropic.
 - Except where explicitly stated, no rights are granted to use, reproduce, sublicense, or redistribute upstream Anthropic source code.
+- This repository should not be presented as official Anthropic software.
 
-### Fork-added files and licensing scope
+### Fork-Added Files and Licensing Scope
 
 Only files authored in this fork are licensed under `LICENSE.fork-additions` (MIT), and only for portions authored by the fork maintainer.
 
@@ -29,347 +201,100 @@ Fork-added or fork-authored files include:
 - `use-provider`
 - `use-openai`
 - `run-claude.sh` (root wrapper)
+- `bootstrap-gateway.sh`
+- `scripts/smoke-test-gateway.sh`
 - `examples/provider-gateway/start-litellm.sh`
 - `examples/provider-gateway/run-claude.sh`
 - `examples/provider-gateway/SETUP.txt`
 - `examples/provider-gateway/litellm.yaml`
+- `examples/provider-gateway/gateway.env.example`
 - `BUILD_GUIDE.md`
+- `docs/PRACTICAL_SETUP.md`
 - README sections explicitly describing fork-added tooling and workflows
 
 All other files remain subject to their original copyright and license status (if any), and are excluded from the fork-added MIT grant.
 
----
+## Research / Archive Context
 
-## Research Context
+This repository still exists as a defensive research and source-exposure archive.
 
-This repository is maintained by a **university student** focused on:
-
-- software supply-chain exposure and build artifact leaks
-- secure software engineering practices
-- agentic developer tooling architecture
-- defensive analysis of real-world CLI systems
-
-This archive supports:
-
-- educational study
-- security research practice
-- architecture review
-- discussion of packaging and release-process failures
+- It mirrors a publicly exposed Claude Code source snapshot that became accessible on March 31, 2026 through an npm source-map exposure.
+- It is maintained for education, defensive security research, and software supply-chain analysis.
+- It is not a clean-room rewrite and not a claim of upstream ownership.
 
 Related research writing:
 
 - [Original publication — Hong Minhee, *Is legal the same as legitimate: AI reimplementation and the erosion of copyleft*](https://writings.hongminhee.org/2026/03/legal-vs-legitimate/)
 
-The essay is dated **March 9, 2026** and serves as companion analysis that predates the **March 31, 2026** source exposure documented below.
+The essay is dated March 9, 2026 and serves as companion analysis that predates the March 31, 2026 source exposure documented in this repo.
 
-## Why this archive exists (and what it is not)
+### Why This Archive Exists
 
-I initially kept this repository as a source-exposure archive to study the harness, tool wiring, and agent workflow. After revisiting the legal and ethical questions—and reading Hong Minhee's essay—I no longer wanted this README to frame the issue as legality alone.
+The snapshot is useful for:
 
-This branch takes a smaller and more direct step: it preserves Hong Minhee's essay as companion reading and makes the research-only framing explicit. This repository is still a mirrored TypeScript source snapshot for analysis; it is **not** a clean-room or Python rewrite.
+- educational study
+- software supply-chain exposure analysis
+- secure software engineering discussion
+- architecture review of modern agentic CLI systems
 
-## Built with `oh-my-codex`
+### How the Public Snapshot Became Accessible
 
-The README/essay archival work on this branch was AI-assisted and orchestrated with Yeachan Heo's [oh-my-codex (OmX)](https://github.com/Yeachan-Heo/oh-my-codex), a Codex workflow layer.
-
-- **`$team` mode:** used for coordinated parallel review of repo fit, wording risk, and final architecture consistency.
-- **`$ralph` mode:** used for persistent execution, verification, and final architect sign-off before claiming completion.
-- **Codex-driven workflow:** this documentation/contextualization pass was completed with Codex under OmX orchestration.
-
-This repository does **not** claim ownership of the original code and should not be interpreted as an official Anthropic repository.
-
----
-
-## How the Public Snapshot Became Accessible
-
-[Chaofan Shou (@Fried_rice)](https://x.com/Fried_rice) publicly noted that Claude Code source material was reachable through a `.map` file exposed in the npm package:
-
-> **"Claude code source code has been leaked via a map file in their npm registry!"**
->
-> — [@Fried_rice, March 31, 2026](https://x.com/Fried_rice/status/2038894956459290963)
-
-The published source map referenced unobfuscated TypeScript sources hosted in Anthropic's R2 bucket, making the `src/` snapshot publicly downloadable.
-
----
+[Chaofan Shou (@Fried_rice)](https://x.com/Fried_rice) publicly noted that Claude Code source material was reachable through an exposed `.map` file in the npm package, which in turn referenced unobfuscated TypeScript sources hosted in Anthropic's R2 bucket.
 
 ## Repository Scope
 
 Claude Code is Anthropic's CLI for interacting with Claude from the terminal to perform engineering tasks such as editing files, running commands, searching codebases, and coordinating workflows.
 
-This repository contains a mirrored `src/` snapshot for research and analysis.
+This repository contains a mirrored `src/` snapshot for research and analysis, plus fork-added local gateway tooling.
 
-- **Public exposure identified on**: 2026-03-31
-- **Language**: TypeScript
-- **Runtime**: Bun
-- **Terminal UI**: React + [Ink](https://github.com/vadimdemedes/ink)
-- **Scale**: ~1,900 files, 512,000+ lines of code
+- Language: TypeScript
+- Runtime: Bun
+- Terminal UI: React + [Ink](https://github.com/vadimdemedes/ink)
+- Extra local workflow: LiteLLM provider gateway under `examples/provider-gateway/`
 
-## Current Fork Additions
+## Built with `oh-my-codex`
 
-This fork adds a local **LiteLLM gateway workflow** under `examples/provider-gateway/` so the CLI can run against multiple providers (OpenAI, Gemini, DeepSeek, OpenRouter) through Anthropic-compatible `/v1/messages`.
+The README and archive-context work on this branch were AI-assisted and orchestrated with Yeachan Heo's [oh-my-codex (OmX)](https://github.com/Yeachan-Heo/oh-my-codex), a Codex workflow layer.
 
-Additional helper scripts:
+- `$team` mode was used for coordinated review of repo fit, wording risk, and architecture consistency.
+- `$ralph` mode was used for persistent execution, verification, and final sign-off before completion.
+- This repository does not claim ownership of the original code and should not be interpreted as an official Anthropic repository.
 
-- `./use-provider` to switch provider route and branding in one command
-- `./use-openai` as a convenience shortcut for OpenAI route
-- `./doctor-gateway` to verify env/model/key/brand readiness before startup
+## Architecture Notes
 
-### Quick Start (Gateway Mode)
-
-1. Install dependencies:
-   - `bun install`
-   - `pip install 'litellm[proxy]'`
-2. Ensure local env exists:
-   - `examples/provider-gateway/gateway.env`
-3. Choose provider route and optional brand:
-   - `./use-provider openrouter`
-   - `./use-provider openai openai-neon "My Custom CLI Name"`
-   - `./use-provider auto` (auto-select the first available provider key)
-   - OpenAI shortcut: `./use-openai` (defaults to `openai-neon`)
-4. Set the matching provider key inside `examples/provider-gateway/gateway.env`:
-   - `OPENAI_API_KEY`, `GOOGLE_API_KEY` (or `GEMINI_API_KEY`), `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`
-5. Run readiness check:
-   - `./doctor-gateway`
-6. Start gateway:
-   - `cd examples/provider-gateway && ./start-litellm.sh`
-   - This repo's `litellm.yaml` is configured with `drop_params: true` for cross-provider compatibility.
-7. Run CLI:
-   - `cd /path/to/repo && ./run-claude.sh`
-
-### GitHub Safety Notes
-
-- Do **not** commit real API keys.
-- Keep secrets only in local `gateway.env` (gitignored).
-- Keep `gateway.env` local and uncommitted.
-- Before push, run `./doctor-gateway` and verify no local secrets are staged.
-
----
-
-## Directory Structure
+### High-Level Layout
 
 ```text
 src/
-├── main.tsx                 # Entrypoint orchestration (Commander.js-based CLI path)
+├── main.tsx                 # CLI startup and initialization
 ├── commands.ts              # Command registry
 ├── tools.ts                 # Tool registry
-├── Tool.ts                  # Tool type definitions
 ├── QueryEngine.ts           # LLM query engine
-├── context.ts               # System/user context collection
-├── cost-tracker.ts          # Token cost tracking
-│
-├── commands/                # Slash command implementations (~50)
-├── tools/                   # Agent tool implementations (~40)
-├── components/              # Ink UI components (~140)
-├── hooks/                   # React hooks
-├── services/                # External service integrations
-├── screens/                 # Full-screen UIs (Doctor, REPL, Resume)
-├── types/                   # TypeScript type definitions
-├── utils/                   # Utility functions
-│
-├── bridge/                  # IDE and remote-control bridge
-├── coordinator/             # Multi-agent coordinator
-├── plugins/                 # Plugin system
-├── skills/                  # Skill system
-├── keybindings/             # Keybinding configuration
-├── vim/                     # Vim mode
-├── voice/                   # Voice input
-├── remote/                  # Remote sessions
-├── server/                  # Server mode
-├── memdir/                  # Persistent memory directory
-├── tasks/                   # Task management
-├── state/                   # State management
-├── migrations/              # Config migrations
-├── schemas/                 # Config schemas (Zod)
-├── entrypoints/             # Initialization logic
-├── ink/                     # Ink renderer wrapper
-├── buddy/                   # Companion sprite
-├── native-ts/               # Native TypeScript utilities
-├── outputStyles/            # Output styling
-├── query/                   # Query pipeline
-└── upstreamproxy/           # Proxy configuration
+├── commands/                # Slash command implementations
+├── tools/                   # Tool implementations
+├── components/              # Ink UI components
+├── services/                # Service integrations
+├── bridge/                  # IDE bridge system
+├── coordinator/             # Multi-agent orchestration
+├── plugins/                 # Plugin loader
+└── skills/                  # Skill system
 ```
 
----
+### Key Subsystems
 
-## Architecture Summary
-
-### 1. Tool System (`src/tools/`)
-
-Every tool Claude Code can invoke is implemented as a self-contained module. Each tool defines its input schema, permission model, and execution logic.
-
-| Tool | Description |
+| Subsystem | What it does |
 |---|---|
-| `BashTool` | Shell command execution |
-| `FileReadTool` | File reading (images, PDFs, notebooks) |
-| `FileWriteTool` | File creation / overwrite |
-| `FileEditTool` | Partial file modification (string replacement) |
-| `GlobTool` | File pattern matching search |
-| `GrepTool` | ripgrep-based content search |
-| `WebFetchTool` | Fetch URL content |
-| `WebSearchTool` | Web search |
-| `AgentTool` | Sub-agent spawning |
-| `SkillTool` | Skill execution |
-| `MCPTool` | MCP server tool invocation |
-| `LSPTool` | Language Server Protocol integration |
-| `NotebookEditTool` | Jupyter notebook editing |
-| `TaskCreateTool` / `TaskUpdateTool` | Task creation and management |
-| `SendMessageTool` | Inter-agent messaging |
-| `TeamCreateTool` / `TeamDeleteTool` | Team agent management |
-| `EnterPlanModeTool` / `ExitPlanModeTool` | Plan mode toggle |
-| `EnterWorktreeTool` / `ExitWorktreeTool` | Git worktree isolation |
-| `ToolSearchTool` | Deferred tool discovery |
-| `CronCreateTool` | Scheduled trigger creation |
-| `RemoteTriggerTool` | Remote trigger |
-| `SleepTool` | Proactive mode wait |
-| `SyntheticOutputTool` | Structured output generation |
+| `src/tools/` | Tool definitions, schemas, permissions, and execution logic |
+| `src/commands/` | Slash command implementations such as review, config, tasks, and doctor flows |
+| `src/services/` | API, MCP, OAuth, LSP, and integration services |
+| `src/bridge/` | IDE bridge code for editors such as VS Code and JetBrains |
+| `src/coordinator/` | Multi-agent coordination and team workflows |
+| `src/plugins/` | Built-in and third-party plugin support |
+| `src/skills/` | Reusable workflow definitions executed through the skill system |
 
-### 2. Command System (`src/commands/`)
+### Notable Design Patterns
 
-User-facing slash commands invoked with `/` prefix.
-
-| Command | Description |
-|---|---|
-| `/commit` | Create a git commit |
-| `/review` | Code review |
-| `/compact` | Context compression |
-| `/mcp` | MCP server management |
-| `/config` | Settings management |
-| `/doctor` | Environment diagnostics |
-| `/login` / `/logout` | Authentication |
-| `/memory` | Persistent memory management |
-| `/skills` | Skill management |
-| `/tasks` | Task management |
-| `/vim` | Vim mode toggle |
-| `/diff` | View changes |
-| `/cost` | Check usage cost |
-| `/theme` | Change theme |
-| `/context` | Context visualization |
-| `/pr_comments` | View PR comments |
-| `/resume` | Restore previous session |
-| `/share` | Share session |
-| `/desktop` | Desktop app handoff |
-| `/mobile` | Mobile app handoff |
-
-### 3. Service Layer (`src/services/`)
-
-| Service | Description |
-|---|---|
-| `api/` | Anthropic API client, file API, bootstrap |
-| `mcp/` | Model Context Protocol server connection and management |
-| `oauth/` | OAuth 2.0 authentication flow |
-| `lsp/` | Language Server Protocol manager |
-| `analytics/` | GrowthBook-based feature flags and analytics |
-| `plugins/` | Plugin loader |
-| `compact/` | Conversation context compression |
-| `policyLimits/` | Organization policy limits |
-| `remoteManagedSettings/` | Remote managed settings |
-| `extractMemories/` | Automatic memory extraction |
-| `tokenEstimation.ts` | Token count estimation |
-| `teamMemorySync/` | Team memory synchronization |
-
-### 4. Bridge System (`src/bridge/`)
-
-A bidirectional communication layer connecting IDE extensions (VS Code, JetBrains) with the Claude Code CLI.
-
-- `bridgeMain.ts` — Bridge main loop
-- `bridgeMessaging.ts` — Message protocol
-- `bridgePermissionCallbacks.ts` — Permission callbacks
-- `replBridge.ts` — REPL session bridge
-- `jwtUtils.ts` — JWT-based authentication
-- `sessionRunner.ts` — Session execution management
-
-### 5. Permission System (`src/hooks/toolPermission/`)
-
-Checks permissions on every tool invocation. It either prompts for approval/denial or auto-resolves based on the configured permission mode (`default`, `plan`, `bypassPermissions`, `auto`, etc.).
-
-### 6. Feature Flags
-
-Dead code elimination via Bun's `bun:bundle` feature flags:
-
-```typescript
-import { feature } from 'bun:bundle'
-
-// Inactive code is completely stripped at build time
-const voiceCommand = feature('VOICE_MODE')
-  ? require('./commands/voice/index.js').default
-  : null
-```
-
-Notable flags: `PROACTIVE`, `KAIROS`, `BRIDGE_MODE`, `DAEMON`, `VOICE_MODE`, `AGENT_TRIGGERS`, `MONITOR_TOOL`
-
----
-
-## Key Files in Detail
-
-### `QueryEngine.ts` (~46K lines)
-
-Core engine for LLM API calls. Handles streaming responses, tool-call loops, thinking mode, retry logic, and token counting.
-
-### `Tool.ts` (~29K lines)
-
-Defines base types and interfaces for all tools: input schemas, permission models, and progress-state types.
-
-### `commands.ts` (~25K lines)
-
-Manages registration and execution of slash commands. Uses conditional imports to load command sets per environment.
-
-### `main.tsx`
-
-Commander.js-based CLI parsing and React/Ink renderer initialization. At startup, it parallelizes MDM settings, keychain prefetch, and GrowthBook initialization for faster boot.
-
----
-
-## Tech Stack
-
-| Category | Technology |
-|---|---|
-| Runtime | [Bun](https://bun.sh) |
-| Language | TypeScript (strict) |
-| Terminal UI | [React](https://react.dev) + [Ink](https://github.com/vadimdemedes/ink) |
-| CLI Parsing | [Commander.js](https://github.com/tj/commander.js) (extra-typings) |
-| Schema Validation | [Zod v4](https://zod.dev) |
-| Code Search | [ripgrep](https://github.com/BurntSushi/ripgrep) |
-| Protocols | [MCP SDK](https://modelcontextprotocol.io), LSP |
-| API | [Anthropic SDK](https://docs.anthropic.com) |
-| Telemetry | OpenTelemetry + gRPC |
-| Feature Flags | GrowthBook |
-| Auth | OAuth 2.0, JWT, macOS Keychain |
-
----
-
-## Notable Design Patterns
-
-### Parallel Prefetch
-
-Startup time is optimized by prefetching MDM settings, keychain reads, and API preconnect in parallel before heavy modules are evaluated.
-
-```typescript
-// main.tsx — fired as side-effects before other imports
-startMdmRawRead()
-startKeychainPrefetch()
-```
-
-### Lazy Loading
-
-Heavy modules (OpenTelemetry, gRPC, analytics, and some feature-gated subsystems) are deferred via dynamic `import()` until needed.
-
-### Agent Swarms
-
-Sub-agents are spawned via `AgentTool`, while `coordinator/` handles multi-agent orchestration. `TeamCreateTool` enables team-level parallel work.
-
-### Skill System
-
-Reusable workflows defined in `skills/` are executed through `SkillTool`. Users can add custom skills.
-
-### Plugin Architecture
-
-Built-in and third-party plugins are loaded through the `plugins/` subsystem.
-
----
-
-## Research / Ownership Disclaimer
-
-- This repository is an **educational and defensive security research archive** maintained by a university student.
-- It exists to study source exposure, packaging failures, and the architecture of modern agentic CLI systems.
-- The original Claude Code source remains the property of **Anthropic**.
-- This repository is **not affiliated with, endorsed by, or maintained by Anthropic**.
+- Parallel startup prefetch for settings, keychain reads, and network setup
+- Lazy loading for heavier integrations and feature-gated systems
+- Tool-driven orchestration rather than a single monolithic agent loop
+- Bridge-based editor integration for IDE-connected workflows
